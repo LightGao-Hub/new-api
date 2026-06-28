@@ -29,7 +29,7 @@ Default tiers after the latest requested change:
 ```text
 raw token count <= 500      => 1.0x
 raw token count > 500       => 1.2x
-raw token count > 1000      => 1.3x
+raw token count > 1000      => 1.35x
 raw token count > 10000     => 1.4x
 raw token count > 50000     => 1.5x
 raw token count > 100000    => 1.6x
@@ -92,7 +92,7 @@ For Chinese demo text, a previous temporary test used `TokenTypeTextNumber`, so 
 glm-5.2 raw=500     => billed=500
 glm-5.2 raw=600     => billed=720
 glm-5.2 raw=1000    => billed=1200
-glm-5.2 raw=1200    => billed=1560
+glm-5.2 raw=1200    => billed=1620
 glm-5.2 raw=12000   => billed=16800
 glm-5.2 raw=60000   => billed=90000
 glm-5.2 raw=120000  => billed=192000

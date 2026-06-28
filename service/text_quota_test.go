@@ -267,10 +267,10 @@ func TestCalculateTextQuotaSummaryAppliesGLM51And52TokenBillingTier(t *testing.T
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
-	require.Equal(t, 1040, summary.PromptTokens)
-	require.Equal(t, 261, summary.CompletionTokens)
-	require.Equal(t, 1301, summary.TotalTokens)
-	require.Equal(t, 1562, summary.Quota)
+	require.Equal(t, 1080, summary.PromptTokens)
+	require.Equal(t, 271, summary.CompletionTokens)
+	require.Equal(t, 1351, summary.TotalTokens)
+	require.Equal(t, 1622, summary.Quota)
 }
 
 func TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelowBaseTier(t *testing.T) {

@@ -14,7 +14,7 @@ func TestApplyTokenBillingMultiplierDefaultGLMTiers(t *testing.T) {
 	require.Equal(t, 500, applyTokenBillingMultiplier("glm-5.2", 500))
 	require.Equal(t, 601, applyTokenBillingMultiplier("glm-5.2", 501))
 	require.Equal(t, 1200, applyTokenBillingMultiplier("glm-5.2", 1000))
-	require.Equal(t, 1301, applyTokenBillingMultiplier("glm-5.2", 1001))
+	require.Equal(t, 1351, applyTokenBillingMultiplier("glm-5.2", 1001))
 	require.Equal(t, 200000, applyTokenBillingMultiplier("openrouter/z-ai/glm-5.1-air", 125000))
 	require.Equal(t, 1250, applyTokenBillingMultiplier("glm-4.6", 1250))
 }
