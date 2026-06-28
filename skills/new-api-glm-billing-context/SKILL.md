@@ -74,6 +74,9 @@ Config example:
 Local Docker override from earlier work:
 - `docker-compose.local.yml`
 
+Deployment notes:
+- `docs/installation/glm-token-billing-deployment.zh-CN.md`
+
 ## Validation Commands
 
 Run focused tests first:
