@@ -244,8 +244,9 @@ func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheReadFromPromptBilling(
 	require.Equal(t, 798, summary.Quota)
 }
 
-func TestCalculateTextQuotaSummaryDoublesGLM51And52TokensAtThreshold(t *testing.T) {
+func TestCalculateTextQuotaSummaryAppliesGLM51And52TokenBillingTier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
 
@@ -266,14 +267,15 @@ func TestCalculateTextQuotaSummaryDoublesGLM51And52TokensAtThreshold(t *testing.
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
-	require.Equal(t, 1600, summary.PromptTokens)
-	require.Equal(t, 402, summary.CompletionTokens)
-	require.Equal(t, 2002, summary.TotalTokens)
-	require.Equal(t, 2404, summary.Quota)
+	require.Equal(t, 960, summary.PromptTokens)
+	require.Equal(t, 241, summary.CompletionTokens)
+	require.Equal(t, 1201, summary.TotalTokens)
+	require.Equal(t, 1442, summary.Quota)
 }
 
-func TestCalculateTextQuotaSummaryDoesNotDoubleGLM51And52TokensBelowThreshold(t *testing.T) {
+func TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelowBaseTier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
 
@@ -288,20 +290,21 @@ func TestCalculateTextQuotaSummaryDoesNotDoubleGLM51And52TokensBelowThreshold(t 
 	}
 
 	usage := &dto.Usage{
-		PromptTokens:     800,
+		PromptTokens:     300,
 		CompletionTokens: 200,
 	}
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
-	require.Equal(t, 800, summary.PromptTokens)
+	require.Equal(t, 300, summary.PromptTokens)
 	require.Equal(t, 200, summary.CompletionTokens)
-	require.Equal(t, 1000, summary.TotalTokens)
-	require.Equal(t, 1200, summary.Quota)
+	require.Equal(t, 500, summary.TotalTokens)
+	require.Equal(t, 700, summary.Quota)
 }
 
-func TestCalculateTextQuotaSummaryDoesNotDoubleGLMEstimateFallbackTwice(t *testing.T) {
+func TestCalculateTextQuotaSummaryDoesNotAdjustGLMEstimateFallbackTwice(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
 

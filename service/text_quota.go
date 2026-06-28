@@ -192,17 +192,17 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
-	adjustedTotalTokens := applyGLMTokenBillingMultiplier(summary.ModelName, summary.TotalTokens)
-	if !usageEstimatedFromPreCount && adjustedTotalTokens != summary.TotalTokens {
-		summary.PromptTokens *= 2
-		summary.CompletionTokens *= 2
-		summary.TotalTokens = adjustedTotalTokens
-		summary.CacheTokens *= 2
-		summary.CacheCreationTokens *= 2
-		summary.CacheCreationTokens5m *= 2
-		summary.CacheCreationTokens1h *= 2
-		summary.ImageTokens *= 2
-		summary.AudioTokens *= 2
+	tokenBillingMultiplier := tokenBillingMultiplierFor(summary.ModelName, summary.TotalTokens)
+	if !usageEstimatedFromPreCount && tokenBillingMultiplier != 1 {
+		summary.PromptTokens = scaleTokenCount(summary.PromptTokens, tokenBillingMultiplier)
+		summary.CompletionTokens = scaleTokenCount(summary.CompletionTokens, tokenBillingMultiplier)
+		summary.TotalTokens = summary.PromptTokens + summary.CompletionTokens
+		summary.CacheTokens = scaleTokenCount(summary.CacheTokens, tokenBillingMultiplier)
+		summary.CacheCreationTokens = scaleTokenCount(summary.CacheCreationTokens, tokenBillingMultiplier)
+		summary.CacheCreationTokens5m = scaleTokenCount(summary.CacheCreationTokens5m, tokenBillingMultiplier)
+		summary.CacheCreationTokens1h = scaleTokenCount(summary.CacheCreationTokens1h, tokenBillingMultiplier)
+		summary.ImageTokens = scaleTokenCount(summary.ImageTokens, tokenBillingMultiplier)
+		summary.AudioTokens = scaleTokenCount(summary.AudioTokens, tokenBillingMultiplier)
 	}
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
