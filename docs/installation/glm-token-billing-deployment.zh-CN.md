@@ -256,6 +256,119 @@ docker compose up -d --force-recreate new-api
 
 ## 验证建议
 
+## 方案三：异机构建镜像后上传生产
+
+如果生产服务器配置较低，直接在生产服务器执行：
+
+```bash
+cd /root/new-api-src
+docker build -t new-api:glm-token-billing .
+```
+
+可能会把 CPU 打满，导致线上访问变慢或不可用。此时建议在另一台机器构建镜像，然后通过 `docker save/load` 上传到生产服务器。
+
+### 1. 先停止生产服务器上的构建进程
+
+如果已经在生产服务器开始构建，先确认是否还有构建进程：
+
+```bash
+ps aux | grep -E "docker build|bun|go build|buildkit|buildx" | grep -v grep
+```
+
+如果还有进程，记录 PID 后停止：
+
+```bash
+kill -9 PID
+```
+
+### 2. 在另一台机器构建镜像
+
+以 Windows PowerShell 为例：
+
+```powershell
+cd C:\Users\gaoliang1-jk\IdeaProjects\my\new-api
+git pull
+docker build --platform linux/amd64 -t new-api:glm-token-billing .
+```
+
+构建完成后导出镜像：
+
+```powershell
+docker save new-api:glm-token-billing -o new-api-glm-token-billing.tar
+```
+
+### 3. 上传到生产服务器
+
+```powershell
+scp .\new-api-glm-token-billing.tar root@你的服务器IP:/root/
+```
+
+### 4. 在生产服务器导入镜像
+
+```bash
+cd /root
+docker load -i new-api-glm-token-billing.tar
+docker images | grep new-api
+```
+
+应看到：
+
+```text
+new-api   glm-token-billing
+```
+
+### 5. 切换生产 compose
+
+编辑生产部署目录的 compose：
+
+```bash
+cd /root/new-api
+cp docker-compose.yml docker-compose.yml.bak-$(date +%F-%H%M%S)
+nano docker-compose.yml
+```
+
+将：
+
+```yaml
+image: calciumion/new-api:latest
+```
+
+改为：
+
+```yaml
+image: new-api:glm-token-billing
+```
+
+然后只重启应用服务：
+
+```bash
+docker compose up -d --force-recreate new-api
+```
+
+### 6. 可选：通过镜像仓库分发
+
+如果有 Docker Hub 或 GHCR，也可以在构建机器上推送镜像：
+
+```powershell
+docker tag new-api:glm-token-billing 你的dockerhub用户名/new-api:glm-token-billing
+docker login
+docker push 你的dockerhub用户名/new-api:glm-token-billing
+```
+
+生产服务器拉取：
+
+```bash
+docker pull 你的dockerhub用户名/new-api:glm-token-billing
+```
+
+然后将 compose 改为：
+
+```yaml
+image: 你的dockerhub用户名/new-api:glm-token-billing
+```
+
+再重启 `new-api` 服务。
+
 测试 `glm-5.1` 或 `glm-5.2` 请求时，重点检查：
 
 - `/usage-logs/common` 页面显示的 prompt/completion token 是否为调整后数量

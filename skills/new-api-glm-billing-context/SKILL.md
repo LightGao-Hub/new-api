@@ -151,6 +151,23 @@ cp config/token_billing_tiers.example.json data/token_billing_tiers.json
 docker compose up -d --build
 ```
 
+If building on the production server saturates CPU and impacts traffic, build on another machine and transfer the image:
+
+```bash
+# build machine
+docker build --platform linux/amd64 -t new-api:glm-token-billing .
+docker save new-api:glm-token-billing -o new-api-glm-token-billing.tar
+scp ./new-api-glm-token-billing.tar root@SERVER:/root/
+
+# production server
+docker load -i /root/new-api-glm-token-billing.tar
+cd /root/new-api
+# set image: new-api:glm-token-billing in docker-compose.yml
+docker compose up -d --force-recreate new-api
+```
+
+An image registry works too: push `your-user/new-api:glm-token-billing`, pull it on production, and set compose `image:` to that tag.
+
 For validating a second stack, prefer isolated PostgreSQL and Redis to avoid production state risk:
 
 ```text
