@@ -5,15 +5,19 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 )
 
 const tokenBillingMultiplierConfigPathEnv = "TOKEN_BILLING_CONFIG_PATH"
+const defaultTokenBillingMultiplierReloadInterval = 15 * time.Second
 
 type tokenBillingMultiplierConfig struct {
-	Rules []tokenBillingMultiplierRule `json:"rules"`
+	Enabled               *bool                        `json:"enabled"`
+	ReloadIntervalSeconds int                          `json:"reload_interval_seconds"`
+	Rules                 []tokenBillingMultiplierRule `json:"rules"`
 }
 
 type tokenBillingMultiplierRule struct {
@@ -29,7 +33,12 @@ type tokenBillingMultiplierTier struct {
 var (
 	tokenBillingMultiplierConfigMu     sync.RWMutex
 	tokenBillingMultiplierConfigLoaded bool
+	tokenBillingMultiplierEnabled      bool
 	tokenBillingMultiplierRules        []tokenBillingMultiplierRule
+	tokenBillingMultiplierConfigPath   string
+	tokenBillingMultiplierConfigModAt  time.Time
+	tokenBillingMultiplierLastCheckAt  time.Time
+	tokenBillingMultiplierReloadEvery  time.Duration
 )
 
 func applyTokenBillingMultiplier(modelName string, tokenCount int) int {
@@ -109,9 +118,15 @@ func tokenBillingMultiplierFor(modelName string, tokenCount int) float64 {
 		return 1
 	}
 
+	reloadTokenBillingMultiplierConfigIfNeeded()
+
 	modelName = strings.ToLower(modelName)
 	multiplier := 1.0
-	for _, rule := range getTokenBillingMultiplierRules() {
+	cfg := getTokenBillingMultiplierConfigSnapshot()
+	if !cfg.Enabled {
+		return 1
+	}
+	for _, rule := range cfg.Rules {
 		if !tokenBillingRuleMatchesModel(rule, modelName) {
 			continue
 		}
@@ -124,49 +139,183 @@ func tokenBillingMultiplierFor(modelName string, tokenCount int) float64 {
 	return multiplier
 }
 
-func getTokenBillingMultiplierRules() []tokenBillingMultiplierRule {
+type tokenBillingMultiplierConfigSnapshot struct {
+	Enabled bool
+	Rules   []tokenBillingMultiplierRule
+}
+
+func getTokenBillingMultiplierConfigSnapshot() tokenBillingMultiplierConfigSnapshot {
 	tokenBillingMultiplierConfigMu.RLock()
 	if tokenBillingMultiplierConfigLoaded {
-		rules := cloneTokenBillingMultiplierRules(tokenBillingMultiplierRules)
+		snapshot := tokenBillingMultiplierConfigSnapshot{
+			Enabled: tokenBillingMultiplierEnabled,
+			Rules:   cloneTokenBillingMultiplierRules(tokenBillingMultiplierRules),
+		}
 		tokenBillingMultiplierConfigMu.RUnlock()
-		return rules
+		return snapshot
 	}
 	tokenBillingMultiplierConfigMu.RUnlock()
 
 	tokenBillingMultiplierConfigMu.Lock()
 	defer tokenBillingMultiplierConfigMu.Unlock()
 	if !tokenBillingMultiplierConfigLoaded {
-		tokenBillingMultiplierRules = loadTokenBillingMultiplierRules()
-		tokenBillingMultiplierConfigLoaded = true
+		loadTokenBillingMultiplierConfigLocked()
 	}
-	return cloneTokenBillingMultiplierRules(tokenBillingMultiplierRules)
+	return tokenBillingMultiplierConfigSnapshot{
+		Enabled: tokenBillingMultiplierEnabled,
+		Rules:   cloneTokenBillingMultiplierRules(tokenBillingMultiplierRules),
+	}
 }
 
-func loadTokenBillingMultiplierRules() []tokenBillingMultiplierRule {
+func reloadTokenBillingMultiplierConfigIfNeeded() {
+	now := time.Now()
+	tokenBillingMultiplierConfigMu.RLock()
+	loaded := tokenBillingMultiplierConfigLoaded
+	reloadEvery := tokenBillingMultiplierReloadEvery
+	if reloadEvery <= 0 {
+		reloadEvery = defaultTokenBillingMultiplierReloadInterval
+	}
+	shouldCheck := !loaded || now.Sub(tokenBillingMultiplierLastCheckAt) >= reloadEvery
+	tokenBillingMultiplierConfigMu.RUnlock()
+	if !shouldCheck {
+		return
+	}
+
+	tokenBillingMultiplierConfigMu.Lock()
+	defer tokenBillingMultiplierConfigMu.Unlock()
+	now = time.Now()
+	reloadEvery = tokenBillingMultiplierReloadEvery
+	if reloadEvery <= 0 {
+		reloadEvery = defaultTokenBillingMultiplierReloadInterval
+	}
+	if tokenBillingMultiplierConfigLoaded && now.Sub(tokenBillingMultiplierLastCheckAt) < reloadEvery {
+		return
+	}
+	tokenBillingMultiplierLastCheckAt = now
+
+	configPath := resolveTokenBillingMultiplierConfigPath()
+	if !tokenBillingMultiplierConfigLoaded {
+		loadTokenBillingMultiplierConfigLocked()
+		return
+	}
+	if configPath != tokenBillingMultiplierConfigPath {
+		loadTokenBillingMultiplierConfigLocked()
+		return
+	}
+
+	info, err := os.Stat(configPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			common.SysError("failed to stat token billing multiplier config: " + err.Error())
+			return
+		}
+		if !tokenBillingMultiplierConfigModAt.IsZero() {
+			applyDefaultTokenBillingMultiplierConfigLocked(configPath, time.Time{})
+		}
+		return
+	}
+
+	modAt := info.ModTime()
+	if modAt.Equal(tokenBillingMultiplierConfigModAt) {
+		return
+	}
+
+	if loadedConfig, ok := readTokenBillingMultiplierConfig(configPath, modAt); ok {
+		applyTokenBillingMultiplierConfigLocked(loadedConfig)
+	}
+}
+
+type loadedTokenBillingMultiplierConfig struct {
+	Enabled     bool
+	Rules       []tokenBillingMultiplierRule
+	ConfigPath  string
+	ConfigModAt time.Time
+	ReloadEvery time.Duration
+}
+
+func resolveTokenBillingMultiplierConfigPath() string {
 	configPath := os.Getenv(tokenBillingMultiplierConfigPathEnv)
 	if strings.TrimSpace(configPath) == "" {
 		configPath = "token_billing_tiers.json"
 	}
+	return configPath
+}
 
+func loadTokenBillingMultiplierConfigLocked() {
+	configPath := resolveTokenBillingMultiplierConfigPath()
+	info, statErr := os.Stat(configPath)
+	if statErr != nil {
+		if !os.IsNotExist(statErr) {
+			common.SysError("failed to stat token billing multiplier config: " + statErr.Error())
+		}
+		applyDefaultTokenBillingMultiplierConfigLocked(configPath, time.Time{})
+		return
+	}
+
+	if loadedConfig, ok := readTokenBillingMultiplierConfig(configPath, info.ModTime()); ok {
+		applyTokenBillingMultiplierConfigLocked(loadedConfig)
+		return
+	}
+	applyDefaultTokenBillingMultiplierConfigLocked(configPath, info.ModTime())
+}
+
+func readTokenBillingMultiplierConfig(configPath string, modAt time.Time) (loadedTokenBillingMultiplierConfig, bool) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			common.SysError("failed to read token billing multiplier config: " + err.Error())
 		}
-		return defaultTokenBillingMultiplierRules()
+		return loadedTokenBillingMultiplierConfig{}, false
 	}
 
 	var cfg tokenBillingMultiplierConfig
 	if err := common.Unmarshal(data, &cfg); err != nil {
 		common.SysError("failed to parse token billing multiplier config: " + err.Error())
-		return defaultTokenBillingMultiplierRules()
+		return loadedTokenBillingMultiplierConfig{}, false
 	}
 
+	enabled := true
+	if cfg.Enabled != nil {
+		enabled = *cfg.Enabled
+	}
 	rules := normalizeTokenBillingMultiplierRules(cfg.Rules)
 	if len(rules) == 0 {
-		return defaultTokenBillingMultiplierRules()
+		rules = defaultTokenBillingMultiplierRules()
 	}
-	return rules
+	reloadEvery := defaultTokenBillingMultiplierReloadInterval
+	if cfg.ReloadIntervalSeconds > 0 {
+		reloadEvery = time.Duration(cfg.ReloadIntervalSeconds) * time.Second
+	}
+
+	return loadedTokenBillingMultiplierConfig{
+		Enabled:     enabled,
+		Rules:       rules,
+		ConfigPath:  configPath,
+		ConfigModAt: modAt,
+		ReloadEvery: reloadEvery,
+	}, true
+}
+
+func applyDefaultTokenBillingMultiplierConfigLocked(configPath string, modAt time.Time) {
+	applyTokenBillingMultiplierConfigLocked(loadedTokenBillingMultiplierConfig{
+		Enabled:     true,
+		Rules:       defaultTokenBillingMultiplierRules(),
+		ConfigPath:  configPath,
+		ConfigModAt: modAt,
+		ReloadEvery: defaultTokenBillingMultiplierReloadInterval,
+	})
+}
+
+func applyTokenBillingMultiplierConfigLocked(cfg loadedTokenBillingMultiplierConfig) {
+	tokenBillingMultiplierEnabled = cfg.Enabled
+	tokenBillingMultiplierRules = cloneTokenBillingMultiplierRules(cfg.Rules)
+	tokenBillingMultiplierConfigPath = cfg.ConfigPath
+	tokenBillingMultiplierConfigModAt = cfg.ConfigModAt
+	tokenBillingMultiplierReloadEvery = cfg.ReloadEvery
+	if tokenBillingMultiplierReloadEvery <= 0 {
+		tokenBillingMultiplierReloadEvery = defaultTokenBillingMultiplierReloadInterval
+	}
+	tokenBillingMultiplierConfigLoaded = true
 }
 
 func defaultTokenBillingMultiplierRules() []tokenBillingMultiplierRule {

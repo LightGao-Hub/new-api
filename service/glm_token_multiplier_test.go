@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/stretchr/testify/require"
@@ -45,6 +46,68 @@ func TestApplyTokenBillingMultiplierLoadsConfigFile(t *testing.T) {
 	require.Equal(t, 17, applyTokenBillingMultiplier("glm-5.2", 11))
 	require.Equal(t, 42, applyTokenBillingMultiplier("glm-5.2", 21))
 	require.Equal(t, 21, applyTokenBillingMultiplier("glm-5.1", 21))
+}
+
+func TestApplyTokenBillingMultiplierConfigCanDisableRules(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "token_billing_tiers.json")
+	err := os.WriteFile(configPath, []byte(`{
+  "enabled": false,
+  "rules": [
+    {
+      "model_contains": ["glm-5.2"],
+      "tiers": [
+        { "above_tokens": 10, "multiplier": 2.0 }
+      ]
+    }
+  ]
+}`), 0o600)
+	require.NoError(t, err)
+
+	resetTokenBillingMultiplierConfigForTest(t)
+	t.Setenv(tokenBillingMultiplierConfigPathEnv, configPath)
+
+	require.Equal(t, 100, applyTokenBillingMultiplier("glm-5.2", 100))
+}
+
+func TestApplyTokenBillingMultiplierHotReloadsConfigToggle(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "token_billing_tiers.json")
+	enabledConfig := `{
+  "enabled": true,
+  "reload_interval_seconds": 1,
+  "rules": [
+    {
+      "model_contains": ["glm-5.2"],
+      "tiers": [
+        { "above_tokens": 10, "multiplier": 2.0 }
+      ]
+    }
+  ]
+}`
+	disabledConfig := `{
+  "enabled": false,
+  "reload_interval_seconds": 1,
+  "rules": [
+    {
+      "model_contains": ["glm-5.2"],
+      "tiers": [
+        { "above_tokens": 10, "multiplier": 2.0 }
+      ]
+    }
+  ]
+}`
+	require.NoError(t, os.WriteFile(configPath, []byte(enabledConfig), 0o600))
+
+	resetTokenBillingMultiplierConfigForTest(t)
+	t.Setenv(tokenBillingMultiplierConfigPathEnv, configPath)
+
+	require.Equal(t, 40, applyTokenBillingMultiplier("glm-5.2", 20))
+
+	require.NoError(t, os.WriteFile(configPath, []byte(disabledConfig), 0o600))
+	forceTokenBillingMultiplierReloadForTest(t)
+
+	require.Equal(t, 20, applyTokenBillingMultiplier("glm-5.2", 20))
 }
 
 func TestApplyTokenBillingMultiplierToUsageReturnsAdjustedCopy(t *testing.T) {
@@ -108,15 +171,26 @@ func setTokenBillingMultiplierRulesForTest(t *testing.T, rules []tokenBillingMul
 
 	tokenBillingMultiplierConfigMu.Lock()
 	previousRules := cloneTokenBillingMultiplierRules(tokenBillingMultiplierRules)
+	previousEnabled := tokenBillingMultiplierEnabled
 	previousLoaded := tokenBillingMultiplierConfigLoaded
+	previousPath := tokenBillingMultiplierConfigPath
+	previousModAt := tokenBillingMultiplierConfigModAt
+	previousLastCheckAt := tokenBillingMultiplierLastCheckAt
+	previousReloadEvery := tokenBillingMultiplierReloadEvery
+	tokenBillingMultiplierEnabled = true
 	tokenBillingMultiplierRules = cloneTokenBillingMultiplierRules(rules)
 	tokenBillingMultiplierConfigLoaded = true
 	tokenBillingMultiplierConfigMu.Unlock()
 
 	t.Cleanup(func() {
 		tokenBillingMultiplierConfigMu.Lock()
+		tokenBillingMultiplierEnabled = previousEnabled
 		tokenBillingMultiplierRules = previousRules
 		tokenBillingMultiplierConfigLoaded = previousLoaded
+		tokenBillingMultiplierConfigPath = previousPath
+		tokenBillingMultiplierConfigModAt = previousModAt
+		tokenBillingMultiplierLastCheckAt = previousLastCheckAt
+		tokenBillingMultiplierReloadEvery = previousReloadEvery
 		tokenBillingMultiplierConfigMu.Unlock()
 	})
 }
@@ -126,15 +200,39 @@ func resetTokenBillingMultiplierConfigForTest(t *testing.T) {
 
 	tokenBillingMultiplierConfigMu.Lock()
 	previousRules := cloneTokenBillingMultiplierRules(tokenBillingMultiplierRules)
+	previousEnabled := tokenBillingMultiplierEnabled
 	previousLoaded := tokenBillingMultiplierConfigLoaded
+	previousPath := tokenBillingMultiplierConfigPath
+	previousModAt := tokenBillingMultiplierConfigModAt
+	previousLastCheckAt := tokenBillingMultiplierLastCheckAt
+	previousReloadEvery := tokenBillingMultiplierReloadEvery
 	tokenBillingMultiplierRules = nil
+	tokenBillingMultiplierEnabled = false
 	tokenBillingMultiplierConfigLoaded = false
+	tokenBillingMultiplierConfigPath = ""
+	tokenBillingMultiplierConfigModAt = time.Time{}
+	tokenBillingMultiplierLastCheckAt = time.Time{}
+	tokenBillingMultiplierReloadEvery = 0
 	tokenBillingMultiplierConfigMu.Unlock()
 
 	t.Cleanup(func() {
 		tokenBillingMultiplierConfigMu.Lock()
 		tokenBillingMultiplierRules = previousRules
+		tokenBillingMultiplierEnabled = previousEnabled
 		tokenBillingMultiplierConfigLoaded = previousLoaded
+		tokenBillingMultiplierConfigPath = previousPath
+		tokenBillingMultiplierConfigModAt = previousModAt
+		tokenBillingMultiplierLastCheckAt = previousLastCheckAt
+		tokenBillingMultiplierReloadEvery = previousReloadEvery
 		tokenBillingMultiplierConfigMu.Unlock()
 	})
+}
+
+func forceTokenBillingMultiplierReloadForTest(t *testing.T) {
+	t.Helper()
+
+	tokenBillingMultiplierConfigMu.Lock()
+	tokenBillingMultiplierLastCheckAt = time.Now().Add(-time.Hour)
+	tokenBillingMultiplierConfigModAt = time.Time{}
+	tokenBillingMultiplierConfigMu.Unlock()
 }

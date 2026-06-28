@@ -52,6 +52,18 @@ The path can be overridden with:
 TOKEN_BILLING_CONFIG_PATH
 ```
 
+Config supports a hot-reload switch:
+
+```json
+{
+  "enabled": true,
+  "reload_interval_seconds": 15,
+  "rules": []
+}
+```
+
+`enabled` defaults to `true`. When set to `false`, all GLM billing multipliers return `1.0`, so internal billing/logs and returned downstream `usage` are not adjusted. The config is kept in memory and checked at most once every 15 seconds by file mtime; it is not read on every request. Invalid JSON keeps the previous valid config.
+
 ## Key Files
 
 Implementation:
