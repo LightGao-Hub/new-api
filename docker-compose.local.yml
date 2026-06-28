@@ -1,0 +1,8 @@
+# Local override: build new-api from the current working tree instead of pulling
+# the published calciumion/new-api image.
+services:
+  new-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: new-api:glm-token-local

@@ -244,6 +244,86 @@ func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheReadFromPromptBilling(
 	require.Equal(t, 798, summary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryDoublesGLM51And52TokensAtThreshold(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "glm-5.2",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 2,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     800,
+		CompletionTokens: 201,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 1600, summary.PromptTokens)
+	require.Equal(t, 402, summary.CompletionTokens)
+	require.Equal(t, 2002, summary.TotalTokens)
+	require.Equal(t, 2404, summary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryDoesNotDoubleGLM51And52TokensBelowThreshold(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "glm-5.1",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 2,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     800,
+		CompletionTokens: 200,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 800, summary.PromptTokens)
+	require.Equal(t, 200, summary.CompletionTokens)
+	require.Equal(t, 1000, summary.TotalTokens)
+	require.Equal(t, 1200, summary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryDoesNotDoubleGLMEstimateFallbackTwice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "glm-5.2",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 2,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	relayInfo.SetEstimatePromptTokens(400)
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, nil)
+
+	require.Equal(t, 400, summary.PromptTokens)
+	require.Equal(t, 0, summary.CompletionTokens)
+	require.Equal(t, 400, summary.TotalTokens)
+	require.Equal(t, 400, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheCreationFromPromptBilling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

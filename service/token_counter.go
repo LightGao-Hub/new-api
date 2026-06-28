@@ -291,6 +291,7 @@ func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *rela
 		}
 	}
 
+	tkm = applyGLMTokenBillingMultiplier(model, tkm)
 	common.SetContextKey(c, constant.ContextKeyPromptTokens, tkm)
 	return tkm, nil
 }

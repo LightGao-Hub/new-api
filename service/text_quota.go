@@ -174,7 +174,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	}
 	summary.IsClaudeUsageSemantic = summary.UsageSemantic == "anthropic"
 
-	if usage == nil {
+	usageEstimatedFromPreCount := usage == nil
+	if usageEstimatedFromPreCount {
 		usage = &dto.Usage{
 			PromptTokens:     relayInfo.GetEstimatePromptTokens(),
 			CompletionTokens: 0,
@@ -191,6 +192,18 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
+	adjustedTotalTokens := applyGLMTokenBillingMultiplier(summary.ModelName, summary.TotalTokens)
+	if !usageEstimatedFromPreCount && adjustedTotalTokens != summary.TotalTokens {
+		summary.PromptTokens *= 2
+		summary.CompletionTokens *= 2
+		summary.TotalTokens = adjustedTotalTokens
+		summary.CacheTokens *= 2
+		summary.CacheCreationTokens *= 2
+		summary.CacheCreationTokens5m *= 2
+		summary.CacheCreationTokens1h *= 2
+		summary.ImageTokens *= 2
+		summary.AudioTokens *= 2
+	}
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
 		relayInfo.ChannelType == constant.ChannelTypeOpenRouter &&
