@@ -327,6 +327,40 @@ func TestCalculateTextQuotaSummaryDoesNotAdjustGLMEstimateFallbackTwice(t *testi
 	require.Equal(t, 400, summary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryDoesNotLetGLMCacheReadTriggerTokenBillingTier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "glm-5.2",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 1,
+			CacheRatio:      0.1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     16077,
+		CompletionTokens: 221,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 16028,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 16077, summary.PromptTokens)
+	require.Equal(t, 221, summary.CompletionTokens)
+	require.Equal(t, 16028, summary.CacheTokens)
+	require.Equal(t, 16298, summary.TotalTokens)
+	require.Equal(t, 1873, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheCreationFromPromptBilling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

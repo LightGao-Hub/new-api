@@ -38,6 +38,8 @@ raw token count > 200000    => 1.7x
 
 Thresholds are strict `>`. Example: `1000` uses the `>500` tier, while `1001` uses the `>1000` tier.
 
+Cache read tokens do not trigger the GLM billing tier and are not multiplied. This was changed after real testing showed short prompts with large cache hits, e.g. raw prompt `16077`, cached `16028`, completion `221`, were incorrectly entering the `>10000` tier. The multiplier tier now uses non-cache input plus output tokens.
+
 Runtime default config path is `token_billing_tiers.json` from the process working directory. In the Docker image, `WORKDIR` is `/data`, so the default runtime file is:
 
 ```text

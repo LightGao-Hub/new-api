@@ -42,25 +42,20 @@ func ApplyTokenBillingMultiplierToUsage(modelName string, usage *dto.Usage) (dto
 	}
 
 	adjusted := cloneUsage(usage)
-	tokenCount := usage.PromptTokens + usage.CompletionTokens
-	if tokenCount == 0 {
-		tokenCount = usage.InputTokens + usage.OutputTokens
-	}
-	if tokenCount == 0 {
-		tokenCount = usage.TotalTokens
-	}
+	tokenCount := tokenBillingMultiplierTokenCount(usage)
 
 	multiplier := tokenBillingMultiplierFor(modelName, tokenCount)
 	if multiplier == 1 {
 		return adjusted, false
 	}
 
-	adjusted.PromptTokens = scaleTokenCount(adjusted.PromptTokens, multiplier)
+	cacheReadTokens := usageCacheReadTokens(usage)
+	adjusted.PromptTokens = scalePromptTokenCount(adjusted.PromptTokens, cacheReadTokens, multiplier)
 	adjusted.CompletionTokens = scaleTokenCount(adjusted.CompletionTokens, multiplier)
-	adjusted.PromptCacheHitTokens = scaleTokenCount(adjusted.PromptCacheHitTokens, multiplier)
+	adjusted.PromptCacheHitTokens = usage.PromptCacheHitTokens
 	adjusted.PromptTokensDetails = scaleInputTokenDetails(adjusted.PromptTokensDetails, multiplier)
 	adjusted.CompletionTokenDetails = scaleOutputTokenDetails(adjusted.CompletionTokenDetails, multiplier)
-	adjusted.InputTokens = scaleTokenCount(adjusted.InputTokens, multiplier)
+	adjusted.InputTokens = scalePromptTokenCount(adjusted.InputTokens, cacheReadTokens, multiplier)
 	adjusted.OutputTokens = scaleTokenCount(adjusted.OutputTokens, multiplier)
 	if adjusted.InputTokensDetails != nil {
 		details := scaleInputTokenDetails(*adjusted.InputTokensDetails, multiplier)
@@ -78,6 +73,35 @@ func ApplyTokenBillingMultiplierToUsage(modelName string, usage *dto.Usage) (dto
 	}
 
 	return adjusted, true
+}
+
+func tokenBillingMultiplierTokenCount(usage *dto.Usage) int {
+	if usage == nil {
+		return 0
+	}
+
+	promptTokens := usage.PromptTokens
+	if promptTokens == 0 {
+		promptTokens = usage.InputTokens
+	}
+	promptTokens -= usageCacheReadTokens(usage)
+	if promptTokens < 0 {
+		promptTokens = 0
+	}
+
+	completionTokens := usage.CompletionTokens
+	if completionTokens == 0 {
+		completionTokens = usage.OutputTokens
+	}
+
+	tokenCount := promptTokens + completionTokens
+	if tokenCount == 0 {
+		tokenCount = usage.TotalTokens - usageCacheReadTokens(usage)
+		if tokenCount < 0 {
+			tokenCount = 0
+		}
+	}
+	return tokenCount
 }
 
 func tokenBillingMultiplierFor(modelName string, tokenCount int) float64 {
@@ -210,6 +234,17 @@ func scaleTokenCount(tokenCount int, multiplier float64) int {
 	return int(math.Round(float64(tokenCount) * multiplier))
 }
 
+func scalePromptTokenCount(tokenCount int, cacheReadTokens int, multiplier float64) int {
+	if tokenCount <= 0 || cacheReadTokens <= 0 {
+		return scaleTokenCount(tokenCount, multiplier)
+	}
+	nonCacheTokens := tokenCount - cacheReadTokens
+	if nonCacheTokens < 0 {
+		nonCacheTokens = 0
+	}
+	return scaleTokenCount(nonCacheTokens, multiplier) + cacheReadTokens
+}
+
 func cloneTokenBillingMultiplierRules(rules []tokenBillingMultiplierRule) []tokenBillingMultiplierRule {
 	cloned := make([]tokenBillingMultiplierRule, len(rules))
 	for i, rule := range rules {
@@ -229,7 +264,6 @@ func cloneUsage(usage *dto.Usage) dto.Usage {
 }
 
 func scaleInputTokenDetails(details dto.InputTokenDetails, multiplier float64) dto.InputTokenDetails {
-	details.CachedTokens = scaleTokenCount(details.CachedTokens, multiplier)
 	details.CachedCreationTokens = scaleTokenCount(details.CachedCreationTokens, multiplier)
 	details.TextTokens = scaleTokenCount(details.TextTokens, multiplier)
 	details.AudioTokens = scaleTokenCount(details.AudioTokens, multiplier)
@@ -243,4 +277,20 @@ func scaleOutputTokenDetails(details dto.OutputTokenDetails, multiplier float64)
 	details.ImageTokens = scaleTokenCount(details.ImageTokens, multiplier)
 	details.ReasoningTokens = scaleTokenCount(details.ReasoningTokens, multiplier)
 	return details
+}
+
+func usageCacheReadTokens(usage *dto.Usage) int {
+	if usage == nil {
+		return 0
+	}
+	if usage.PromptTokensDetails.CachedTokens > 0 {
+		return usage.PromptTokensDetails.CachedTokens
+	}
+	if usage.InputTokensDetails != nil && usage.InputTokensDetails.CachedTokens > 0 {
+		return usage.InputTokensDetails.CachedTokens
+	}
+	if usage.PromptCacheHitTokens > 0 {
+		return usage.PromptCacheHitTokens
+	}
+	return 0
 }

@@ -7,6 +7,8 @@
 
 该分支包含 `glm-5.1` / `glm-5.2` 的可配置 token 计费倍率逻辑。命中倍率后，服务端使用日志、扣费统计以及返回给下游客户端的 OpenAI/OpenAI Responses `usage` 会使用调整后的 token 数量。
 
+注意：缓存读取 token 不参与倍率档位判断，也不会被倍率放大。倍率档位按“非缓存输入 token + 输出 token”判断，避免短输入请求因为命中大量缓存而直接进入高倍率档位。
+
 ## 方案一：另一台 PC 本地测试
 
 本地测试时要从当前源码构建镜像，不要直接使用官方镜像。
@@ -235,5 +237,6 @@ docker compose up -d --force-recreate new-api
 - `/usage-logs/common` 页面显示的 prompt/completion token 是否为调整后数量
 - 接口返回的 OpenAI `usage` 是否为调整后数量
 - `/v1/responses` 协议返回的 `usage.input_tokens` / `usage.output_tokens` / `usage.total_tokens` 是否为调整后数量
+- 短输入但有大量缓存命中的请求，不应仅因为 `cached_tokens` 很大而触发高倍率
 
 如果下游中转站依赖上游返回的 `usage` 计费，以上返回值会决定下游记录到的 token 数量。

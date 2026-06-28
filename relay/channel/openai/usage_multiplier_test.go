@@ -43,6 +43,35 @@ func TestOpenaiHandlerReturnsAdjustedUsageToClientAndRawUsageForBilling(t *testi
 	require.Contains(t, recorder.Body.String(), `"usage":{"prompt_tokens":1080,"completion_tokens":271,"total_tokens":1351`)
 }
 
+func TestOpenaiHandlerDoesNotLetCacheReadTriggerClientUsageMultiplier(t *testing.T) {
+	oldMode := gin.Mode()
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() { gin.SetMode(oldMode) })
+
+	body := `{"id":"chatcmpl_1","object":"chat.completion","model":"glm-5.2","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":16077,"completion_tokens":221,"total_tokens":16298,"prompt_tokens_details":{"cached_tokens":16028}}}`
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta:     &relaycommon.ChannelMeta{},
+		OriginModelName: "glm-5.2",
+		RelayFormat:     types.RelayFormatOpenAI,
+	}
+
+	usage, err := OpenaiHandler(c, info, resp)
+
+	require.Nil(t, err)
+	require.Equal(t, 16077, usage.PromptTokens)
+	require.Equal(t, 221, usage.CompletionTokens)
+	require.Equal(t, 16298, usage.TotalTokens)
+	require.Contains(t, recorder.Body.String(), `"usage":{"prompt_tokens":16077,"completion_tokens":221,"total_tokens":16298`)
+	require.Contains(t, recorder.Body.String(), `"cached_tokens":16028`)
+}
+
 func TestHandleFinalResponseReturnsAdjustedGeneratedStreamUsage(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)

@@ -66,18 +66,39 @@ func TestApplyTokenBillingMultiplierToUsageReturnsAdjustedCopy(t *testing.T) {
 	adjusted, ok := ApplyTokenBillingMultiplierToUsage("glm-5.2", usage)
 
 	require.True(t, ok)
-	require.Equal(t, 1080, adjusted.PromptTokens)
-	require.Equal(t, 271, adjusted.CompletionTokens)
-	require.Equal(t, 1351, adjusted.TotalTokens)
-	require.Equal(t, 135, adjusted.PromptTokensDetails.CachedTokens)
-	require.Equal(t, 27, adjusted.PromptTokensDetails.CachedCreationTokens)
-	require.Equal(t, 945, adjusted.PromptTokensDetails.TextTokens)
-	require.Equal(t, 1080, adjusted.InputTokens)
-	require.Equal(t, 271, adjusted.OutputTokens)
+	require.Equal(t, 940, adjusted.PromptTokens)
+	require.Equal(t, 241, adjusted.CompletionTokens)
+	require.Equal(t, 1181, adjusted.TotalTokens)
+	require.Equal(t, 100, adjusted.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 24, adjusted.PromptTokensDetails.CachedCreationTokens)
+	require.Equal(t, 840, adjusted.PromptTokensDetails.TextTokens)
+	require.Equal(t, 940, adjusted.InputTokens)
+	require.Equal(t, 241, adjusted.OutputTokens)
 	require.NotSame(t, usage.InputTokensDetails, adjusted.InputTokensDetails)
-	require.Equal(t, 135, adjusted.InputTokensDetails.CachedTokens)
+	require.Equal(t, 100, adjusted.InputTokensDetails.CachedTokens)
 	require.Equal(t, 800, usage.PromptTokens)
 	require.Equal(t, 100, usage.InputTokensDetails.CachedTokens)
+}
+
+func TestApplyTokenBillingMultiplierToUsageIgnoresCacheReadForTier(t *testing.T) {
+	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
+
+	usage := &dto.Usage{
+		PromptTokens:     16077,
+		CompletionTokens: 221,
+		TotalTokens:      16298,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 16028,
+		},
+	}
+
+	adjusted, ok := ApplyTokenBillingMultiplierToUsage("glm-5.2", usage)
+
+	require.False(t, ok)
+	require.Equal(t, 16077, adjusted.PromptTokens)
+	require.Equal(t, 221, adjusted.CompletionTokens)
+	require.Equal(t, 16298, adjusted.TotalTokens)
+	require.Equal(t, 16028, adjusted.PromptTokensDetails.CachedTokens)
 }
 
 func setTokenBillingMultiplierRulesForTest(t *testing.T, rules []tokenBillingMultiplierRule) {
