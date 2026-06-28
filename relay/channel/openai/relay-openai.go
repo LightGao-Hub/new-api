@@ -124,7 +124,11 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if lastStreamData != "" {
-			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
+			dataToSend := lastStreamData
+			if adjustedData, adjusted, err := streamDataWithClientUsage(info, lastStreamData); err == nil && adjusted {
+				dataToSend = adjustedData
+			}
+			if err := HandleStreamFormat(c, info, dataToSend, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
 				sr.Error(err)
 			}
@@ -168,18 +172,24 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
 	}
 
-	if info.RelayFormat == types.RelayFormatOpenAI {
-		if shouldSendLastResp {
-			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
-		}
-	}
-
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		usage.CompletionTokens += toolCount * 7
 	}
 
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
+
+	if info.RelayFormat == types.RelayFormatOpenAI {
+		if shouldSendLastResp {
+			dataToSend := lastStreamData
+			if containStreamUsage {
+				if adjustedData, adjusted, err := streamDataWithClientUsage(info, lastStreamData); err == nil && adjusted {
+					dataToSend = adjustedData
+				}
+			}
+			_ = sendStreamData(c, info, dataToSend, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
+		}
+	}
 
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
 
@@ -250,19 +260,19 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	applyUsagePostProcessing(info, &simpleResponse.Usage, responseBody)
+	billingUsage := simpleResponse.Usage
+	clientUsage, usageAdjusted := usageForClient(info, &simpleResponse.Usage)
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
-		if usageModified {
-			var bodyMap map[string]interface{}
-			err = common.Unmarshal(responseBody, &bodyMap)
+		if usageModified || usageAdjusted {
+			responseBody, err = responseBodyWithUsage(responseBody, clientUsage)
 			if err != nil {
 				return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 			}
-			bodyMap["usage"] = simpleResponse.Usage
-			responseBody, _ = common.Marshal(bodyMap)
 		}
 		if forceFormat {
+			simpleResponse.Usage = clientUsage
 			responseBody, err = common.Marshal(simpleResponse)
 			if err != nil {
 				return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
@@ -271,14 +281,18 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 			break
 		}
 	case types.RelayFormatClaude:
-		claudeResp := service.ResponseOpenAI2Claude(&simpleResponse, info)
+		clientResponse := simpleResponse
+		clientResponse.Usage = clientUsage
+		claudeResp := service.ResponseOpenAI2Claude(&clientResponse, info)
 		claudeRespStr, err := common.Marshal(claudeResp)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 		responseBody = claudeRespStr
 	case types.RelayFormatGemini:
-		geminiResp := service.ResponseOpenAI2Gemini(&simpleResponse, info)
+		clientResponse := simpleResponse
+		clientResponse.Usage = clientUsage
+		geminiResp := service.ResponseOpenAI2Gemini(&clientResponse, info)
 		geminiRespStr, err := common.Marshal(geminiResp)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
@@ -288,5 +302,5 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
-	return &simpleResponse.Usage, nil
+	return &billingUsage, nil
 }

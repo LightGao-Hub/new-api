@@ -41,8 +41,6 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	}
 
 	// 写入新的 response body
-	service.IOCopyBytesGracefully(c, resp, responseBody)
-
 	// compute usage
 	usage := dto.Usage{}
 	if responsesResponse.Usage != nil {
@@ -53,6 +51,17 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			usage.PromptTokensDetails.CachedTokens = responsesResponse.Usage.InputTokensDetails.CachedTokens
 		}
 	}
+	if responsesResponse.Usage != nil {
+		if clientUsage, adjusted := usageForClient(info, responsesResponse.Usage); adjusted {
+			responsesResponse.Usage = &clientUsage
+			responseBody, err = common.Marshal(responsesResponse)
+			if err != nil {
+				return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
+			}
+		}
+	}
+	service.IOCopyBytesGracefully(c, resp, responseBody)
+
 	if info == nil || info.ResponsesUsageInfo == nil || info.ResponsesUsageInfo.BuiltInTools == nil {
 		return &usage, nil
 	}
@@ -88,7 +97,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		dataToSend := data
 		switch streamResponse.Type {
 		case "response.completed":
 			if streamResponse.Response != nil {
@@ -104,6 +113,12 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					}
 					if streamResponse.Response.Usage.InputTokensDetails != nil {
 						usage.PromptTokensDetails.CachedTokens = streamResponse.Response.Usage.InputTokensDetails.CachedTokens
+					}
+					if clientUsage, adjusted := usageForClient(info, streamResponse.Response.Usage); adjusted {
+						streamResponse.Response.Usage = &clientUsage
+						if encoded, err := common.Marshal(streamResponse); err == nil {
+							dataToSend = string(encoded)
+						}
 					}
 				}
 				if streamResponse.Response.HasImageGenerationCall() {
@@ -128,6 +143,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 			}
 		}
+		sendResponsesStreamData(c, streamResponse, dataToSend)
 	})
 
 	if usage.CompletionTokens == 0 {

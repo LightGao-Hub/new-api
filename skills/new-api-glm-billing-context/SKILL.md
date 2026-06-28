@@ -56,10 +56,17 @@ Implementation:
 - `service/glm_token_multiplier.go`
 - `service/token_counter.go`
 - `service/text_quota.go`
+- `relay/channel/openai/usage.go`
+- `relay/channel/openai/relay-openai.go`
+- `relay/channel/openai/helper.go`
+- `relay/channel/openai/chat_via_responses.go`
+- `relay/channel/openai/responses_via_chat.go`
+- `relay/channel/openai/relay_responses.go`
 
 Tests:
 - `service/glm_token_multiplier_test.go`
 - `service/text_quota_test.go`
+- `relay/channel/openai/usage_multiplier_test.go`
 
 Config example:
 - `config/token_billing_tiers.example.json`
@@ -99,6 +106,19 @@ glm-5.2 raw=120000  => billed=192000
 glm-5.2 raw=240000  => billed=408000
 glm-4.6 raw=240000  => billed=240000
 ```
+
+## Downstream Usage Alignment
+
+The branch now also adjusts the `usage` returned to clients on OpenAI-compatible response paths, so a downstream new-api instance that records usage from this API response sees the same token totals that this instance logs and bills.
+
+Important implementation detail: response paths write an adjusted copy of `usage` to the client, but return the raw upstream usage to the settlement path. `PostTextConsumeQuota` still applies the multiplier once when writing quota/logs. This avoids double multiplication.
+
+Covered paths include:
+- non-stream `/v1/chat/completions`
+- generated final stream usage chunk for `/v1/chat/completions`
+- upstream stream chunks that already contain `usage`
+- `/v1/responses` direct responses and stream completed events
+- responses-to-chat and chat-to-responses compatibility conversions
 
 ## Docker Deployment Context
 

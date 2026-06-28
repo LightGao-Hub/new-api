@@ -5,6 +5,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 )
 
 func applyUsagePostProcessing(info *relaycommon.RelayInfo, usage *dto.Usage, responseBody []byte) {
@@ -48,6 +49,55 @@ func applyUsagePostProcessing(info *relaycommon.RelayInfo, usage *dto.Usage, res
 			}
 		}
 	}
+}
+
+func usageForClient(info *relaycommon.RelayInfo, usage *dto.Usage) (dto.Usage, bool) {
+	if usage == nil {
+		return dto.Usage{}, false
+	}
+	return service.ApplyTokenBillingMultiplierToUsage(modelNameForTokenBilling(info), usage)
+}
+
+func modelNameForTokenBilling(info *relaycommon.RelayInfo) string {
+	if info == nil {
+		return ""
+	}
+	if info.OriginModelName != "" {
+		return info.OriginModelName
+	}
+	if info.ChannelMeta != nil && info.ChannelMeta.UpstreamModelName != "" {
+		return info.ChannelMeta.UpstreamModelName
+	}
+	return info.UpstreamModelName
+}
+
+func responseBodyWithUsage(responseBody []byte, usage dto.Usage) ([]byte, error) {
+	var bodyMap map[string]interface{}
+	if err := common.Unmarshal(responseBody, &bodyMap); err != nil {
+		return nil, err
+	}
+	bodyMap["usage"] = usage
+	return common.Marshal(bodyMap)
+}
+
+func streamDataWithClientUsage(info *relaycommon.RelayInfo, data string) (string, bool, error) {
+	var streamResponse dto.ChatCompletionsStreamResponse
+	if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
+		return data, false, err
+	}
+	if streamResponse.Usage == nil {
+		return data, false, nil
+	}
+	clientUsage, adjusted := usageForClient(info, streamResponse.Usage)
+	if !adjusted {
+		return data, false, nil
+	}
+	streamResponse.Usage = &clientUsage
+	encoded, err := common.Marshal(streamResponse)
+	if err != nil {
+		return data, false, err
+	}
+	return string(encoded), true, nil
 }
 
 func extractCachedTokensFromBody(body []byte) (int, bool) {

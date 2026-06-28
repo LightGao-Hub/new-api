@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 )
 
 const tokenBillingMultiplierConfigPathEnv = "TOKEN_BILLING_CONFIG_PATH"
@@ -33,6 +34,50 @@ var (
 
 func applyTokenBillingMultiplier(modelName string, tokenCount int) int {
 	return scaleTokenCount(tokenCount, tokenBillingMultiplierFor(modelName, tokenCount))
+}
+
+func ApplyTokenBillingMultiplierToUsage(modelName string, usage *dto.Usage) (dto.Usage, bool) {
+	if usage == nil {
+		return dto.Usage{}, false
+	}
+
+	adjusted := cloneUsage(usage)
+	tokenCount := usage.PromptTokens + usage.CompletionTokens
+	if tokenCount == 0 {
+		tokenCount = usage.InputTokens + usage.OutputTokens
+	}
+	if tokenCount == 0 {
+		tokenCount = usage.TotalTokens
+	}
+
+	multiplier := tokenBillingMultiplierFor(modelName, tokenCount)
+	if multiplier == 1 {
+		return adjusted, false
+	}
+
+	adjusted.PromptTokens = scaleTokenCount(adjusted.PromptTokens, multiplier)
+	adjusted.CompletionTokens = scaleTokenCount(adjusted.CompletionTokens, multiplier)
+	adjusted.PromptCacheHitTokens = scaleTokenCount(adjusted.PromptCacheHitTokens, multiplier)
+	adjusted.PromptTokensDetails = scaleInputTokenDetails(adjusted.PromptTokensDetails, multiplier)
+	adjusted.CompletionTokenDetails = scaleOutputTokenDetails(adjusted.CompletionTokenDetails, multiplier)
+	adjusted.InputTokens = scaleTokenCount(adjusted.InputTokens, multiplier)
+	adjusted.OutputTokens = scaleTokenCount(adjusted.OutputTokens, multiplier)
+	if adjusted.InputTokensDetails != nil {
+		details := scaleInputTokenDetails(*adjusted.InputTokensDetails, multiplier)
+		adjusted.InputTokensDetails = &details
+	}
+	adjusted.ClaudeCacheCreation5mTokens = scaleTokenCount(adjusted.ClaudeCacheCreation5mTokens, multiplier)
+	adjusted.ClaudeCacheCreation1hTokens = scaleTokenCount(adjusted.ClaudeCacheCreation1hTokens, multiplier)
+
+	if adjusted.PromptTokens != 0 || adjusted.CompletionTokens != 0 {
+		adjusted.TotalTokens = adjusted.PromptTokens + adjusted.CompletionTokens
+	} else if adjusted.InputTokens != 0 || adjusted.OutputTokens != 0 {
+		adjusted.TotalTokens = adjusted.InputTokens + adjusted.OutputTokens
+	} else {
+		adjusted.TotalTokens = scaleTokenCount(adjusted.TotalTokens, multiplier)
+	}
+
+	return adjusted, true
 }
 
 func tokenBillingMultiplierFor(modelName string, tokenCount int) float64 {
@@ -172,4 +217,30 @@ func cloneTokenBillingMultiplierRules(rules []tokenBillingMultiplierRule) []toke
 		cloned[i].Tiers = append([]tokenBillingMultiplierTier(nil), rule.Tiers...)
 	}
 	return cloned
+}
+
+func cloneUsage(usage *dto.Usage) dto.Usage {
+	cloned := *usage
+	if usage.InputTokensDetails != nil {
+		details := *usage.InputTokensDetails
+		cloned.InputTokensDetails = &details
+	}
+	return cloned
+}
+
+func scaleInputTokenDetails(details dto.InputTokenDetails, multiplier float64) dto.InputTokenDetails {
+	details.CachedTokens = scaleTokenCount(details.CachedTokens, multiplier)
+	details.CachedCreationTokens = scaleTokenCount(details.CachedCreationTokens, multiplier)
+	details.TextTokens = scaleTokenCount(details.TextTokens, multiplier)
+	details.AudioTokens = scaleTokenCount(details.AudioTokens, multiplier)
+	details.ImageTokens = scaleTokenCount(details.ImageTokens, multiplier)
+	return details
+}
+
+func scaleOutputTokenDetails(details dto.OutputTokenDetails, multiplier float64) dto.OutputTokenDetails {
+	details.TextTokens = scaleTokenCount(details.TextTokens, multiplier)
+	details.AudioTokens = scaleTokenCount(details.AudioTokens, multiplier)
+	details.ImageTokens = scaleTokenCount(details.ImageTokens, multiplier)
+	details.ReasoningTokens = scaleTokenCount(details.ReasoningTokens, multiplier)
+	return details
 }

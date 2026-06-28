@@ -52,6 +52,8 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		usage = service.ResponseText2Usage(c, text, info.UpstreamModelName, info.GetEstimatePromptTokens())
 		chatResp.Usage = *usage
 	}
+	clientUsage, _ := usageForClient(info, usage)
+	chatResp.Usage = clientUsage
 
 	var responseBody []byte
 	switch info.RelayFormat {
@@ -155,6 +157,8 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 		usage = service.ResponseText2Usage(c, text, info.UpstreamModelName, info.GetEstimatePromptTokens())
 		chatResp.Usage = *usage
 	}
+	clientUsage, _ := usageForClient(info, usage)
+	chatResp.Usage = clientUsage
 
 	var responseBody []byte
 	switch info.RelayFormat {
@@ -196,6 +200,12 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	sendChatChunk := func(chunk dto.ChatCompletionsStreamResponse) bool {
 		if len(chunk.Choices) == 0 && chunk.Usage == nil {
 			return true
+		}
+		if chunk.Usage != nil {
+			clientUsage, adjusted := usageForClient(info, chunk.Usage)
+			if adjusted {
+				chunk.Usage = &clientUsage
+			}
 		}
 		if info.RelayFormat == types.RelayFormatOpenAI {
 			if err := helper.ObjectData(c, &chunk); err != nil {
@@ -276,7 +286,8 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		}
 	}
 	if info.RelayFormat == types.RelayFormatOpenAI && info.ShouldIncludeUsage && usage != nil {
-		if err := helper.ObjectData(c, helper.GenerateFinalUsageResponse(responseId, state.Created, state.Model, *usage)); err != nil {
+		clientUsage, _ := usageForClient(info, usage)
+		if err := helper.ObjectData(c, helper.GenerateFinalUsageResponse(responseId, state.Created, state.Model, clientUsage)); err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 		}
 	}

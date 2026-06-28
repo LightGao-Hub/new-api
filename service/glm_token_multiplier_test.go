@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,6 +43,41 @@ func TestApplyTokenBillingMultiplierLoadsConfigFile(t *testing.T) {
 	require.Equal(t, 17, applyTokenBillingMultiplier("glm-5.2", 11))
 	require.Equal(t, 42, applyTokenBillingMultiplier("glm-5.2", 21))
 	require.Equal(t, 21, applyTokenBillingMultiplier("glm-5.1", 21))
+}
+
+func TestApplyTokenBillingMultiplierToUsageReturnsAdjustedCopy(t *testing.T) {
+	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
+
+	inputDetails := &dto.InputTokenDetails{CachedTokens: 100, TextTokens: 700}
+	usage := &dto.Usage{
+		PromptTokens:     800,
+		CompletionTokens: 201,
+		TotalTokens:      1001,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         100,
+			CachedCreationTokens: 20,
+			TextTokens:           700,
+		},
+		InputTokens:        800,
+		OutputTokens:       201,
+		InputTokensDetails: inputDetails,
+	}
+
+	adjusted, ok := ApplyTokenBillingMultiplierToUsage("glm-5.2", usage)
+
+	require.True(t, ok)
+	require.Equal(t, 1080, adjusted.PromptTokens)
+	require.Equal(t, 271, adjusted.CompletionTokens)
+	require.Equal(t, 1351, adjusted.TotalTokens)
+	require.Equal(t, 135, adjusted.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 27, adjusted.PromptTokensDetails.CachedCreationTokens)
+	require.Equal(t, 945, adjusted.PromptTokensDetails.TextTokens)
+	require.Equal(t, 1080, adjusted.InputTokens)
+	require.Equal(t, 271, adjusted.OutputTokens)
+	require.NotSame(t, usage.InputTokensDetails, adjusted.InputTokensDetails)
+	require.Equal(t, 135, adjusted.InputTokensDetails.CachedTokens)
+	require.Equal(t, 800, usage.PromptTokens)
+	require.Equal(t, 100, usage.InputTokensDetails.CachedTokens)
 }
 
 func setTokenBillingMultiplierRulesForTest(t *testing.T, rules []tokenBillingMultiplierRule) {
