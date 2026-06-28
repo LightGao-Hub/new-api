@@ -1,0 +1,4 @@
+interface:
+  display_name: "New API GLM Billing Context"
+  short_description: "Hand off GLM token billing changes for new-api."
+  default_prompt: "Use this skill to continue the new-api GLM token billing work, including tests, GitHub branch, and Docker deployment context."

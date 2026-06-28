@@ -1,0 +1,132 @@
+---
+name: new-api-glm-billing-context
+description: Continue the LightGao-Hub/new-api GLM token billing work. Use when Codex needs context about the glm-5.1/glm-5.2 configurable token billing tiers, related tests, GitHub branch, local Docker deployment, or production blue/green deployment discussion from June 28, 2026.
+---
+
+# New API GLM Billing Context
+
+## Current Branch
+
+Work on `glm-token-billing-multiplier` in `https://github.com/LightGao-Hub/new-api`.
+
+The branch contains:
+- `bdc7e943 Add GLM token billing multiplier`
+- `99952fc5 Make GLM token billing tiers configurable`
+- a later change that raises every default GLM tier multiplier by `0.1`
+
+Do not assume `main` has these changes unless the user says it was merged.
+
+## Billing Behavior
+
+The billing adjustment is transparent, configurable, and limited to matching model names.
+
+Default matched models:
+- `glm-5.1`
+- `glm-5.2`
+
+Default tiers after the latest requested change:
+
+```text
+raw token count <= 500      => 1.0x
+raw token count > 500       => 1.2x
+raw token count > 1000      => 1.3x
+raw token count > 10000     => 1.4x
+raw token count > 50000     => 1.5x
+raw token count > 100000    => 1.6x
+raw token count > 200000    => 1.7x
+```
+
+Thresholds are strict `>`. Example: `1000` uses the `>500` tier, while `1001` uses the `>1000` tier.
+
+Runtime default config path is `token_billing_tiers.json` from the process working directory. In the Docker image, `WORKDIR` is `/data`, so the default runtime file is:
+
+```text
+/data/token_billing_tiers.json
+```
+
+The path can be overridden with:
+
+```text
+TOKEN_BILLING_CONFIG_PATH
+```
+
+## Key Files
+
+Implementation:
+- `service/glm_token_multiplier.go`
+- `service/token_counter.go`
+- `service/text_quota.go`
+
+Tests:
+- `service/glm_token_multiplier_test.go`
+- `service/text_quota_test.go`
+
+Config example:
+- `config/token_billing_tiers.example.json`
+
+Local Docker override from earlier work:
+- `docker-compose.local.yml`
+
+## Validation Commands
+
+Run focused tests first:
+
+```powershell
+go test ./service -run 'TestApplyTokenBillingMultiplier|TestCalculateTextQuotaSummaryAppliesGLM51And52TokenBillingTier|TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelowBaseTier|TestCalculateTextQuotaSummaryDoesNotAdjustGLMEstimateFallbackTwice' -count=1 -v
+```
+
+Full service tests may still fail on an unrelated existing test:
+
+```text
+TestObserveChannelAffinityUsageCacheByRelayFormat_UnsupportedModeKeepsEmpty
+expected 1, actual 3
+```
+
+Treat that as pre-existing unless code in channel affinity was changed.
+
+## Demo Expectations
+
+For Chinese demo text, a previous temporary test used `TokenTypeTextNumber`, so raw token count equaled Chinese character count. After the latest +0.1 change, expected values are:
+
+```text
+glm-5.2 raw=500     => billed=500
+glm-5.2 raw=600     => billed=720
+glm-5.2 raw=1000    => billed=1200
+glm-5.2 raw=1200    => billed=1560
+glm-5.2 raw=12000   => billed=16800
+glm-5.2 raw=60000   => billed=90000
+glm-5.2 raw=120000  => billed=192000
+glm-5.2 raw=240000  => billed=408000
+glm-4.6 raw=240000  => billed=240000
+```
+
+## Docker Deployment Context
+
+For production build from source:
+
+```bash
+git clone -b glm-token-billing-multiplier https://github.com/LightGao-Hub/new-api.git
+cd new-api
+mkdir -p data
+cp config/token_billing_tiers.example.json data/token_billing_tiers.json
+docker compose up -d --build
+```
+
+For validating a second stack, prefer isolated PostgreSQL and Redis to avoid production state risk:
+
+```text
+blue: current production app + postgres + redis, port 3000
+green: new app + postgres-green + redis-green, port 3001
+```
+
+Do not connect validation green to production Redis/PostgreSQL unless the user explicitly accepts real write, cache, quota, and task-processing risk.
+
+If the user wants near-zero downtime for production, validate on isolated green first, then rebuild only the production `new-api` service against the existing production DB/Redis:
+
+```bash
+docker compose up -d --build new-api
+```
+
+## Safety Boundary
+
+The user previously asked about making billing changes hard to discover. Do not implement hidden or deceptive billing. Keep billing logic configurable, explainable, and auditable.
