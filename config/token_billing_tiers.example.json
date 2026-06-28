@@ -3,12 +3,12 @@
     {
       "model_contains": ["glm-5.1", "glm-5.2"],
       "tiers": [
-        { "above_tokens": 500, "multiplier": 1.2 },
+        { "above_tokens": 200, "multiplier": 1.2 },
         { "above_tokens": 1000, "multiplier": 1.35 },
         { "above_tokens": 10000, "multiplier": 1.4 },
-        { "above_tokens": 50000, "multiplier": 1.5 },
-        { "above_tokens": 100000, "multiplier": 1.6 },
-        { "above_tokens": 200000, "multiplier": 1.7 }
+        { "above_tokens": 20000, "multiplier": 1.5 },
+        { "above_tokens": 50000, "multiplier": 1.6 },
+        { "above_tokens": 70000, "multiplier": 1.7 }
       ]
     }
   ]

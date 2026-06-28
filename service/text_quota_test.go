@@ -273,7 +273,7 @@ func TestCalculateTextQuotaSummaryAppliesGLM51And52TokenBillingTier(t *testing.T
 	require.Equal(t, 1622, summary.Quota)
 }
 
-func TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelowBaseTier(t *testing.T) {
+func TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelow200(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
 	w := httptest.NewRecorder()
@@ -290,16 +290,16 @@ func TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelowBaseTier
 	}
 
 	usage := &dto.Usage{
-		PromptTokens:     300,
-		CompletionTokens: 200,
+		PromptTokens:     100,
+		CompletionTokens: 100,
 	}
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
-	require.Equal(t, 300, summary.PromptTokens)
-	require.Equal(t, 200, summary.CompletionTokens)
-	require.Equal(t, 500, summary.TotalTokens)
-	require.Equal(t, 700, summary.Quota)
+	require.Equal(t, 100, summary.PromptTokens)
+	require.Equal(t, 100, summary.CompletionTokens)
+	require.Equal(t, 200, summary.TotalTokens)
+	require.Equal(t, 300, summary.Quota)
 }
 
 func TestCalculateTextQuotaSummaryDoesNotAdjustGLMEstimateFallbackTwice(t *testing.T) {
@@ -327,7 +327,7 @@ func TestCalculateTextQuotaSummaryDoesNotAdjustGLMEstimateFallbackTwice(t *testi
 	require.Equal(t, 400, summary.Quota)
 }
 
-func TestCalculateTextQuotaSummaryDoesNotLetGLMCacheReadTriggerTokenBillingTier(t *testing.T) {
+func TestCalculateTextQuotaSummaryUsesNonCacheTokensForGLMTokenBillingTier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
 	w := httptest.NewRecorder()
@@ -354,11 +354,11 @@ func TestCalculateTextQuotaSummaryDoesNotLetGLMCacheReadTriggerTokenBillingTier(
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
-	require.Equal(t, 16077, summary.PromptTokens)
-	require.Equal(t, 221, summary.CompletionTokens)
+	require.Equal(t, 16087, summary.PromptTokens)
+	require.Equal(t, 265, summary.CompletionTokens)
 	require.Equal(t, 16028, summary.CacheTokens)
-	require.Equal(t, 16298, summary.TotalTokens)
-	require.Equal(t, 1873, summary.Quota)
+	require.Equal(t, 16352, summary.TotalTokens)
+	require.Equal(t, 1927, summary.Quota)
 }
 
 func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheCreationFromPromptBilling(t *testing.T) {

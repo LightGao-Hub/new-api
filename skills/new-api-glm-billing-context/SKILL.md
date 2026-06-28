@@ -27,18 +27,18 @@ Default matched models:
 Default tiers after the latest requested change:
 
 ```text
-raw token count <= 500      => 1.0x
-raw token count > 500       => 1.2x
+raw token count <= 200      => 1.0x
+raw token count > 200       => 1.2x
 raw token count > 1000      => 1.35x
 raw token count > 10000     => 1.4x
-raw token count > 50000     => 1.5x
-raw token count > 100000    => 1.6x
-raw token count > 200000    => 1.7x
+raw token count > 20000     => 1.5x
+raw token count > 50000     => 1.6x
+raw token count > 70000     => 1.7x
 ```
 
-Thresholds are strict `>`. Example: `1000` uses the `>500` tier, while `1001` uses the `>1000` tier.
+Thresholds are strict `>`. Example: `1000` uses the `>200` tier, while `1001` uses the `>1000` tier.
 
-Cache read tokens do not trigger the GLM billing tier and are not multiplied. This was changed after real testing showed short prompts with large cache hits, e.g. raw prompt `16077`, cached `16028`, completion `221`, were incorrectly entering the `>10000` tier. The multiplier tier now uses non-cache input plus output tokens.
+Cache read tokens do not trigger the GLM billing tier and are not multiplied. This was changed after real testing showed short prompts with large cache hits, e.g. raw prompt `16077`, cached `16028`, completion `221`, were incorrectly entering the `>10000` tier. The multiplier tier now uses non-cache input plus output tokens, so that example is judged as `270` tokens and enters the `>200` tier after the latest tier change.
 
 Runtime default config path is `token_billing_tiers.json` from the process working directory. In the Docker image, `WORKDIR` is `/data`, so the default runtime file is:
 
@@ -84,7 +84,7 @@ Deployment notes:
 Run focused tests first:
 
 ```powershell
-go test ./service -run 'TestApplyTokenBillingMultiplier|TestCalculateTextQuotaSummaryAppliesGLM51And52TokenBillingTier|TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelowBaseTier|TestCalculateTextQuotaSummaryDoesNotAdjustGLMEstimateFallbackTwice' -count=1 -v
+go test ./service -run 'TestApplyTokenBillingMultiplier|TestCalculateTextQuotaSummaryAppliesGLM51And52TokenBillingTier|TestCalculateTextQuotaSummaryDoesNotAdjustGLM51And52TokensAtOrBelow200|TestCalculateTextQuotaSummaryDoesNotAdjustGLMEstimateFallbackTwice' -count=1 -v
 ```
 
 Full service tests may still fail on an unrelated existing test:
@@ -101,13 +101,15 @@ Treat that as pre-existing unless code in channel affinity was changed.
 For Chinese demo text, a previous temporary test used `TokenTypeTextNumber`, so raw token count equaled Chinese character count. After the latest +0.1 change, expected values are:
 
 ```text
-glm-5.2 raw=500     => billed=500
+glm-5.2 raw=200     => billed=200
+glm-5.2 raw=500     => billed=600
 glm-5.2 raw=600     => billed=720
 glm-5.2 raw=1000    => billed=1200
 glm-5.2 raw=1200    => billed=1620
 glm-5.2 raw=12000   => billed=16800
-glm-5.2 raw=60000   => billed=90000
-glm-5.2 raw=120000  => billed=192000
+glm-5.2 raw=25000   => billed=37500
+glm-5.2 raw=60000   => billed=96000
+glm-5.2 raw=120000  => billed=204000
 glm-5.2 raw=240000  => billed=408000
 glm-4.6 raw=240000  => billed=240000
 ```

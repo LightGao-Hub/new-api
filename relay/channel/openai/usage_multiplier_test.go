@@ -43,7 +43,7 @@ func TestOpenaiHandlerReturnsAdjustedUsageToClientAndRawUsageForBilling(t *testi
 	require.Contains(t, recorder.Body.String(), `"usage":{"prompt_tokens":1080,"completion_tokens":271,"total_tokens":1351`)
 }
 
-func TestOpenaiHandlerDoesNotLetCacheReadTriggerClientUsageMultiplier(t *testing.T) {
+func TestOpenaiHandlerUsesNonCacheTokensForClientUsageMultiplier(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)
 	t.Cleanup(func() { gin.SetMode(oldMode) })
@@ -68,7 +68,7 @@ func TestOpenaiHandlerDoesNotLetCacheReadTriggerClientUsageMultiplier(t *testing
 	require.Equal(t, 16077, usage.PromptTokens)
 	require.Equal(t, 221, usage.CompletionTokens)
 	require.Equal(t, 16298, usage.TotalTokens)
-	require.Contains(t, recorder.Body.String(), `"usage":{"prompt_tokens":16077,"completion_tokens":221,"total_tokens":16298`)
+	require.Contains(t, recorder.Body.String(), `"usage":{"prompt_tokens":16087,"completion_tokens":265,"total_tokens":16352`)
 	require.Contains(t, recorder.Body.String(), `"cached_tokens":16028`)
 }
 

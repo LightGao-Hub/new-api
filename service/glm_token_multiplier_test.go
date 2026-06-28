@@ -12,11 +12,13 @@ import (
 func TestApplyTokenBillingMultiplierDefaultGLMTiers(t *testing.T) {
 	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
 
-	require.Equal(t, 500, applyTokenBillingMultiplier("glm-5.2", 500))
+	require.Equal(t, 200, applyTokenBillingMultiplier("glm-5.2", 200))
+	require.Equal(t, 241, applyTokenBillingMultiplier("glm-5.2", 201))
+	require.Equal(t, 600, applyTokenBillingMultiplier("glm-5.2", 500))
 	require.Equal(t, 601, applyTokenBillingMultiplier("glm-5.2", 501))
 	require.Equal(t, 1200, applyTokenBillingMultiplier("glm-5.2", 1000))
 	require.Equal(t, 1351, applyTokenBillingMultiplier("glm-5.2", 1001))
-	require.Equal(t, 200000, applyTokenBillingMultiplier("openrouter/z-ai/glm-5.1-air", 125000))
+	require.Equal(t, 212500, applyTokenBillingMultiplier("openrouter/z-ai/glm-5.1-air", 125000))
 	require.Equal(t, 1250, applyTokenBillingMultiplier("glm-4.6", 1250))
 }
 
@@ -80,7 +82,7 @@ func TestApplyTokenBillingMultiplierToUsageReturnsAdjustedCopy(t *testing.T) {
 	require.Equal(t, 100, usage.InputTokensDetails.CachedTokens)
 }
 
-func TestApplyTokenBillingMultiplierToUsageIgnoresCacheReadForTier(t *testing.T) {
+func TestApplyTokenBillingMultiplierToUsageUsesNonCacheTokensForTier(t *testing.T) {
 	setTokenBillingMultiplierRulesForTest(t, defaultTokenBillingMultiplierRules())
 
 	usage := &dto.Usage{
@@ -94,10 +96,10 @@ func TestApplyTokenBillingMultiplierToUsageIgnoresCacheReadForTier(t *testing.T)
 
 	adjusted, ok := ApplyTokenBillingMultiplierToUsage("glm-5.2", usage)
 
-	require.False(t, ok)
-	require.Equal(t, 16077, adjusted.PromptTokens)
-	require.Equal(t, 221, adjusted.CompletionTokens)
-	require.Equal(t, 16298, adjusted.TotalTokens)
+	require.True(t, ok)
+	require.Equal(t, 16087, adjusted.PromptTokens)
+	require.Equal(t, 265, adjusted.CompletionTokens)
+	require.Equal(t, 16352, adjusted.TotalTokens)
 	require.Equal(t, 16028, adjusted.PromptTokensDetails.CachedTokens)
 }
 

@@ -174,12 +174,12 @@ func defaultTokenBillingMultiplierRules() []tokenBillingMultiplierRule {
 		{
 			ModelContains: []string{"glm-5.1", "glm-5.2"},
 			Tiers: []tokenBillingMultiplierTier{
-				{AboveTokens: 500, Multiplier: 1.2},
+				{AboveTokens: 200, Multiplier: 1.2},
 				{AboveTokens: 1000, Multiplier: 1.35},
 				{AboveTokens: 10000, Multiplier: 1.4},
-				{AboveTokens: 50000, Multiplier: 1.5},
-				{AboveTokens: 100000, Multiplier: 1.6},
-				{AboveTokens: 200000, Multiplier: 1.7},
+				{AboveTokens: 20000, Multiplier: 1.5},
+				{AboveTokens: 50000, Multiplier: 1.6},
+				{AboveTokens: 70000, Multiplier: 1.7},
 			},
 		},
 	}
